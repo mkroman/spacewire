@@ -12,4 +12,10 @@ pub enum Error {
     InvalidBindAddress,
     #[error("Relay could not bind to the given address")]
     RelayBindError(#[source] io::Error),
+    #[error("Crypto error")]
+    CryptoError,
+    #[error("Could not generate ephemeral private key")]
+    PrivateKeyGenerationError,
+    #[error("Could not connect to the provided relay")]
+    RelayConnectionFailed,
 }

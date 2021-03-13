@@ -1,4 +1,5 @@
 mod error;
+pub mod link;
 pub mod relay;
 
 pub use error::Error;

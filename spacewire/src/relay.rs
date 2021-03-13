@@ -8,8 +8,9 @@ pub struct Relay {
 }
 
 impl Relay {
-    pub async fn bind<Addr: ToSocketAddrs>(addrs: Addr) -> Result<Relay, Error> {
-        let addr = tokio::net::lookup_host(addrs)
+    /// Attempts to bind a relay to the first resolving `addr`, returning a [`Relay`] on success.
+    pub async fn bind<Addr: ToSocketAddrs>(addr: Addr) -> Result<Relay, Error> {
+        let addr = tokio::net::lookup_host(addr)
             .await
             .map_err(Error::BindAddressResolveError)?
             .next()

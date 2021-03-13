@@ -7,11 +7,12 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [[bin]]
-name = "spacewire"
+name = "spacewire-cli"
 path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0"
+bech32 = "0.8"
 log = "0.4"
 pretty_env_logger = "0.4"
 structopt = "0.3"
