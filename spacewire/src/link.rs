@@ -1,44 +1,72 @@
-use log::trace;
-use ring::{agreement, rand};
+use std::convert::TryInto;
+
+use log::{debug, trace};
+use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::net::{self, TcpStream, ToSocketAddrs};
 
+use crate::proto::{Packet, PROTOCOL_VERSION};
 use crate::Error;
+use crate::Identity;
 
 #[derive(Debug)]
-pub struct EphemeralLink {
-    private_key: agreement::EphemeralPrivateKey,
+pub struct Link {
+    relay: String,
+    identity: Identity,
+    msg_id: u64,
 }
 
-impl EphemeralLink {
-    /// Creates a new link with a new, securely generated ephemeral private key.
-    pub fn new() -> Result<EphemeralLink, Error> {
-        let rng = rand::SystemRandom::new();
-        let private_key = agreement::EphemeralPrivateKey::generate(&agreement::X25519, &rng)
-            .map_err(|_| Error::PrivateKeyGenerationError)?;
+/// Resolves the given `host` and attempts to open a TCP connection to it on the given `port`.
+async fn resolve_and_connect(addr: impl ToSocketAddrs) -> Result<Option<TcpStream>, Error> {
+    // Resolve the address and find one that is connectable
+    let addrs = net::lookup_host(addr).await?;
 
-        Ok(EphemeralLink { private_key })
+    for addr in addrs {
+        if let Ok(stream) = TcpStream::connect(addr).await {
+            trace!("Connected to relay tcp://{}", stream.peer_addr()?);
+
+            return Ok(Some(stream));
+        }
     }
 
-    /// Computes and returns the public key for this ephemeral link.
-    pub fn public_key(&self) -> Result<agreement::PublicKey, Error> {
-        self.private_key
-            .compute_public_key()
-            .map_err(|_| Error::CryptoError)
+    Ok(None)
+}
+
+impl Link {
+    /// Constructs a new [`Link`] that connects to the given `relay` using the given `identity` for
+    /// encryption.
+    pub fn new_with_identity(relay: impl Into<String>, identity: Identity) -> Result<Link, Error> {
+        Ok(Link {
+            relay: relay.into(),
+            identity,
+            msg_id: 0,
+        })
     }
 
-    /// Connects to the given relay at `addr`.
-    pub async fn connect<T: ToSocketAddrs>(&self, addrs: T) -> Result<(), Error> {
-        // Resolve the address and find one that is connectable
-        let addrs = net::lookup_host(addrs).await?;
+    /// Attempts to the previously defined `relay`.
+    pub async fn connect(&self) -> Result<(), Error> {
+        if let Some(stream) = resolve_and_connect(&self.relay).await? {
+            debug!(
+                "Established connection to relay {}",
+                stream.peer_addr().unwrap()
+            );
 
-        for addr in addrs {
-            if let Ok(stream) = TcpStream::connect(addr).await {
-                trace!("Connected to relay {}", stream.peer_addr()?);
+            let mut writer = BufWriter::new(stream);
 
-                return Ok(());
-            }
+            // Introduce ourself
+            let packet = Packet::ClientIntroduction {
+                proto_ver: PROTOCOL_VERSION,
+                pub_key: self.identity.public_key().try_into().unwrap(),
+            };
+
+            packet.to_writer(&mut writer).await?;
+            writer.flush().await?;
         }
 
-        Err(Error::RelayConnectionFailed)
+        Ok(())
+    }
+
+    /// Returns the associated `identity`.
+    pub fn identity(&self) -> &Identity {
+        &self.identity
     }
 }
